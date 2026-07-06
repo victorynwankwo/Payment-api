@@ -34,7 +34,6 @@ export const initializePayment = async (req, res) => {
         },
       },
     );
-    console.log(paystackResponse.data);
 
     // Axios unpacks HTTP JSON responses directly inside the 'data' property
     const paystackData = paystackResponse.data;
@@ -67,6 +66,7 @@ export const initializePayment = async (req, res) => {
         "Payment initialized successfully. Redirect the user to the authorization URL.",
     });
   } catch (error) {
+    console.error("Initialize payment error:", error.message);
     // Gracefully catch and display Paystack's exact API error if it fails
     const errorMessage = error.response?.data?.message || error.message;
     return res.status(500).json({ error: errorMessage });
@@ -76,7 +76,6 @@ export const initializePayment = async (req, res) => {
 export const getPaymentStatus = async (req, res) => {
   try {
     const { reference } = req.params;
-   
 
     // Look up the document matching the custom reference string
     const payment = await Payment.findOne({ reference });
@@ -94,6 +93,7 @@ export const getPaymentStatus = async (req, res) => {
       status: payment.status, // Will return "initialized", "completed", or "failed"
     });
   } catch (error) {
+    console.error("Get payment status error:", error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -101,13 +101,13 @@ export const webhook = async (req, res) => {
   try {
     // A. Grab the security signature header sent automatically by Paystack
     const paystackSignature = req.headers["x-paystack-signature"];
-    const secret = process.env.PAYSTACK_API_KEY; 
+    const secret = process.env.PAYSTACK_API_KEY;
 
     if (!paystackSignature) {
       return res.status(401).send("Missing signature header");
     }
 
-    // B. THIS IS THE VERIFICATION LOGIC: 
+    // B. THIS IS THE VERIFICATION LOGIC:
     // We cryptographically generate a local hash of the body using our secret key
     const hash = crypto
       .createHmac("sha512", secret)
@@ -124,27 +124,23 @@ export const webhook = async (req, res) => {
 
     // E. Extract the payment metrics
     const { event, data } = req.body;
-    console.log(`: Received event notification -> ${event}`);
 
     // F. If payment is successful, find it in MongoDB and change status to "completed"
     if (event === "charge.success") {
       const updatedPayment = await Payment.findOneAndUpdate(
-        { reference: data.reference }, 
+        { reference: data.reference },
         {
-          status: "completed",          
+          status: "completed",
           providerReference: data.id.toString(),
-          providerResponse: data,       
+          providerResponse: data,
           webhookInitialized: true,
           verifiedAt: new Date(),
         },
-        { new: true }
+        { new: true },
       );
 
       if (updatedPayment) {
-        console.log(`${data.reference} successfully marked as completed.`);
         // Write any backend database fulfillment logic here (e.g., fund wallet, unlock dashboard access)
-      } else {
-        console.warn(`: Reference ${data.reference} was paid but doesn't exist in MongoDB.`);
       }
     }
 
@@ -156,32 +152,34 @@ export const webhook = async (req, res) => {
           status: "failed",
           providerResponse: data,
           webhookInitialized: true,
-        }
+        },
       );
-      console.log(`: Reference ${data.reference} marked as failed.`);
     }
-
   } catch (error) {
-    console.error( error.message);
+    console.error("Webhook error:", error.message);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
-
-
-
 export const verifyPayment = async (req, res) => {
   try {
-    const { reference } = req.params; 
+    const { reference } = req.params;
 
     // 1. Check if the payment exists in your MongoDB first
     let payment = await Payment.findOne({ reference });
     if (!payment) {
-      return res.status(404).json({ success: false, message: "Transaction record not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Transaction record not found" });
     }
 
     // 2. If already marked completed by webhook, return success instantly
     if (payment.status === "completed") {
-      return res.status(200).json({ success: true, status: "completed", message: "Payment already verified." });
+      return res.status(200).json({
+        success: true,
+        status: "completed",
+        message: "Payment already verified.",
+      });
     }
 
     // 3. Hit Paystack's official verification API endpoint
@@ -191,28 +189,26 @@ export const verifyPayment = async (req, res) => {
         headers: {
           Authorization: `Bearer ${process.env.PAYSTACK_API_KEY}`,
         },
-      }
+      },
     );
 
     const paystackData = paystackResponse.data;
 
     // 4. Check if the transaction was successful on Paystack's network
     if (paystackData.status && paystackData.data.status === "success") {
-      
       // 5. Update MongoDB state immediately so frontend gets the updated status
       payment = await Payment.findOneAndUpdate(
         { reference },
-        { 
+        {
           status: "completed",
           providerReference: paystackData.data.id.toString(),
           providerResponse: paystackData.data,
           verifiedAt: new Date(),
         },
-        { new: true }
+        { new: true },
       );
 
       // Perform value fulfillment here (e.g., fund wallet, activate premium feature)
-      console.log(`Reference ${reference} verified directly via API.`);
 
       return res.status(200).json({
         success: true,
@@ -224,11 +220,11 @@ export const verifyPayment = async (req, res) => {
     // 6. Handle cases where payment failed or is still pending on Paystack
     return res.status(200).json({
       success: true,
-      status: payment.status, 
+      status: payment.status,
       message: `Payment status on gateway: ${paystackData.data.status}`,
     });
-
   } catch (error) {
+    console.error("Verify payment error:", error.message);
     const errorMessage = error.response?.data?.message || error.message;
     return res.status(500).json({ success: false, error: errorMessage });
   }
