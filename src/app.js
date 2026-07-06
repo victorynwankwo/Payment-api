@@ -1,11 +1,11 @@
 import express from "express";
 import cors from "cors";
 import paymentRoutes from "./Routes/paymentRoute.js";
-
+import corsOptions from "./Config/corsOption.js";
 const app = express();
 
 // 1. Enable cross-origin resource sharing for frontend apps
-app.use(cors());
+app.use(cors(corsOptions));
 
 // 2. Parse incoming JSON requests, reserving a raw string buffer for webhook validation
 app.use(
@@ -13,12 +13,11 @@ app.use(
     verify: (req, res, buf) => {
       req.rawBody = buf.toString();
     },
-  })
+  }),
 );
 
 // 3. Mount payment endpoints
-app.use("/api/v1/payments", paymentRoutes);
-
+app.use("/api/payments", paymentRoutes);
 
 // 4. Basic fallback health-check route
 app.get("/health", (req, res) => {
