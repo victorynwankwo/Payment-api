@@ -73,7 +73,7 @@ npm start
 ### Swagger Docs
 
 - GET /api-docs — interactive Swagger documentation UI
-- Example: http://localhost:5000/api-docs
+- Example: https://payment-api-m45x.onrender.com/api-docs/
 
 ## Notes
 
